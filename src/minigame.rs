@@ -59,7 +59,7 @@ impl MiniGame {
     pub fn draw(&self, gfx: &Gfx) {
         let mut header = String::new();
         use core::fmt::Write;
-        write!(header, "PLAY  {}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
+        write!(header, "あそぶ  {}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
         draw::line(gfx, 2, 16, GlyphStyle::Bold, &header);
 
         // The pet leans the way it turned last round, so the reveal is visible
@@ -83,10 +83,10 @@ impl MiniGame {
         }
 
         if let Some((_, right)) = self.last {
-            draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "HIT!" } else { "miss" });
+            draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "あたり！" } else { "はずれ" });
         }
 
-        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, "LEFT       RIGHT");
-        draw::legend(gfx, "< left   ^ stop   > right");
+        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, "  ひだり      みぎ");
+        draw::legend(gfx, "← ひだり  🔥 やめる  → みぎ");
     }
 }

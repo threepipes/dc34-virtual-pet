@@ -2,15 +2,18 @@
 
 対象: 128 × 128 モノクロ OLED（1bpp）
 
-> モック中の絵文字は**見た目の説明用**。実機は 1bpp なので、実際は自前のビットマップアイコンになる。
+> モック中の絵文字のうち、**メニューバーのアイコンは実物**。`emoji` フォント（16×16、1bpp）が
+> イメージに含まれており、`🍚 🎮 🧹 💊 📖` はいずれも収録済みなのでそのまま描画できる。
+> キャラクターの顔文字は説明用で、実装は円と線で描いている（将来ビットマップに置き換え）。
 
-> **表示文字列について**: 以下のモックは日本語で書いてあるが、**実装は ASCII を使う**。
-> `ja` フォントはイメージに入っているものの、`blitstr2` の `english_rules` は
-> baosec 向けビルドで `zh` にしかフォールバックせず、`ja` を参照しない
-> （`libs/blitstr2/src/style_macros.rs`）。`locales/lang-ja` を有効にしても直らない —
-> `style_glyph()` はロケールを `"jp"` と比較するが、`locales` が返すのは `"ja"` で一致しない
-> （`libs/blitstr2/src/lib.rs`）。どちらも `xous-core` の修正が必要なので、
-> 公式のまま使う方針を優先して ASCII にしている。
+> **表示文字列について**: 日本語表示には **`xous-core` の fork が必要**。
+> 上流の `blitstr2` は、baosec イメージに焼いた `ja` フォントに到達できない。
+> `english_rules` が baosec 向けビルドで `zh` にしかフォールバックせず
+> （`libs/blitstr2/src/style_macros.rs`）、`locales/lang-ja` を有効にしても
+> `style_glyph()` がロケールを `"jp"` と比較する一方 `locales` が返すのは `"ja"` なので
+> 一致しない（`libs/blitstr2/src/lib.rs`）。
+> 修正は `threepipes/xous-core` の `fix/baosec-cjk-fallback` ブランチにある。
+> 素の `xous-core` でビルドすると、かなはすべて U+FFFD になる。
 
 ---
 

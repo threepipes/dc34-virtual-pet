@@ -38,18 +38,16 @@ const KEY_MENU: char = '∴';
 const MESSAGE_MS: u64 = 1500;
 
 // -- On-screen text -----------------------------------------------------------
-// Everything the player reads is ASCII, not the Japanese of docs/UI.md. The ja
-// font is compiled into the image, but blitstr2's `english_rules` for baosec
-// falls back to zh only and never consults it (libs/blitstr2/src/style_macros.rs
-// ~152), so kana come out as replacement glyphs. Selecting the Japanese rules
-// does not help either: `style_glyph` matches the locale against "jp" while
-// locales sets LANG to "ja", so `lang-ja` still lands in the English rules.
-// Fixing either would mean patching xous-core, which this project keeps stock.
+// Japanese needs the fork of xous-core: upstream's blitstr2 never reaches the ja
+// font it compiles into a baosec image. See the fork's `fix/baosec-cjk-fallback`
+// branch. Against stock xous-core every kana below renders as U+FFFD.
 
-/// The main screen's icon bar, in cursor order.
-const MENU: [&str; 5] = ["FD", "PL", "CL", "MD", "SC"];
+/// The main screen's icon bar, in cursor order. These are the icons `docs/UI.md`
+/// asks for: the emoji font is 16 px like the Japanese one, so they fit a cell,
+/// and unlike kana they need no fork -- emoji were always in the fallback chain.
+const MENU: [&str; 5] = ["🍚", "🎮", "🧹", "💊", "📖"];
 /// What each icon means, shown while it is selected.
-const MENU_NAMES: [&str; 5] = ["FEED", "PLAY", "CLEAN", "MEDICINE", "SCOLD"];
+const MENU_NAMES: [&str; 5] = ["ごはん", "あそぶ", "そうじ", "くすり", "しつけ"];
 
 const MENU_FEED: usize = 0;
 const MENU_PLAY: usize = 1;
@@ -57,7 +55,7 @@ const MENU_CLEAN: usize = 2;
 const MENU_MEDICINE: usize = 3;
 const MENU_SCOLD: usize = 4;
 
-const FEED_ITEMS: [&str; 2] = ["MEAL", "SNACK"];
+const FEED_ITEMS: [&str; 2] = ["ごはん", "おやつ"];
 
 /// What the host should do after handing a key to the game.
 pub enum GameAction {
@@ -137,11 +135,11 @@ impl VirtualPet {
     fn report(&mut self, result: Result<(), Refusal>, done: &str) {
         self.say(match result {
             Ok(()) => done,
-            Err(Refusal::Unhatched) => "not hatched yet",
-            Err(Refusal::Asleep) => "shh, sleeping",
-            Err(Refusal::Full) => "already full",
-            Err(Refusal::Healthy) => "feeling fine!",
-            Err(Refusal::Nothing) => "nothing to do",
+            Err(Refusal::Unhatched) => "まだたまごだよ",
+            Err(Refusal::Asleep) => "ねているよ",
+            Err(Refusal::Full) => "おなかいっぱい",
+            Err(Refusal::Healthy) => "げんき！",
+            Err(Refusal::Nothing) => "なにもないよ",
         });
     }
 
@@ -151,22 +149,22 @@ impl VirtualPet {
             MENU_FEED => self.screen = Screen::Feed(0),
             MENU_PLAY => {
                 if self.snapshot().asleep {
-                    self.say("shh, sleeping");
+                    self.say("ねているよ");
                 } else {
                     self.screen = Screen::Play(MiniGame::new(self.now_ms));
                 }
             }
             MENU_CLEAN => {
                 let r = self.state.game_mut().pet_mut().clean();
-                self.report(r, "all clean!");
+                self.report(r, "きれいになった");
             }
             MENU_MEDICINE => {
                 let r = self.state.game_mut().pet_mut().medicate();
-                self.report(r, "all better!");
+                self.report(r, "なおった！");
             }
             MENU_SCOLD => {
                 let r = self.state.game_mut().pet_mut().scold();
-                self.report(r, "told off");
+                self.report(r, "しかった");
             }
             _ => {}
         }
@@ -176,7 +174,7 @@ impl VirtualPet {
     fn finish_minigame(&mut self, wins: u32) {
         let won = wins >= 3;
         self.state.game_mut().pet_mut().play_result(won).ok();
-        self.say(if won { "that was fun!" } else { "not bad" });
+        self.say(if won { "たのしかった！" } else { "まあまあかな" });
         self.screen = Screen::Main;
     }
 
@@ -278,9 +276,9 @@ impl BadgeGame for VirtualPet {
                     let pick = *cursor;
                     let pet = self.state.game_mut().pet_mut();
                     let (r, done) = if pick == 0 {
-                        (pet.feed_meal(), "munch munch")
+                        (pet.feed_meal(), "むしゃむしゃ")
                     } else {
-                        (pet.feed_snack(), "yum!")
+                        (pet.feed_snack(), "もぐもぐ")
                     };
                     self.report(r, done);
                     self.screen = Screen::Main;
@@ -342,36 +340,36 @@ impl BadgeGame for VirtualPet {
             Screen::Ended(outcome) => {
                 draw::creature(gfx, s.stage, Face::Dead);
                 let (title, detail) = match outcome {
-                    Outcome::Lifespan => ("A FULL LIFE", "traits passed on"),
-                    Outcome::CareFailure => ("IT DIDN'T MAKE IT", "back to gen 1"),
+                    Outcome::Lifespan => ("じゅみょうをまっとうした", "とくせいをひきついだ"),
+                    Outcome::CareFailure => ("おわってしまった…", "せだいは 1 にもどる"),
                 };
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
                 draw::line(gfx, 90, 16, GlyphStyle::Small, detail);
-                draw::legend(gfx, "^ continue");
+                draw::legend(gfx, "🔥 でつづける");
                 return;
             }
 
             Screen::Evolved => {
                 draw::creature(gfx, s.stage, Face::Happy);
-                let title = if s.stage == Stage::Baby { "HATCHED!" } else { "IT GREW!" };
+                let title = if s.stage == Stage::Baby { "うまれた！" } else { "おおきくなった！" };
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
-                draw::legend(gfx, "^ continue");
+                draw::legend(gfx, "🔥 でつづける");
                 return;
             }
 
             Screen::Status => {
-                draw::line(gfx, 2, 16, GlyphStyle::Bold, "STATUS");
+                draw::line(gfx, 2, 16, GlyphStyle::Bold, "ステータス");
                 let rows = [
-                    format!("gen        {}", s.generation),
-                    format!("age        day {}", s.time.day),
-                    format!("weight     {} g", s.weight),
-                    format!("discipline {} / 4", s.discipline),
-                    format!("misses     {}", s.care_miss),
+                    format!("せだい     {}", s.generation),
+                    format!("ねんれい   {} にちめ", s.time.day),
+                    format!("たいじゅう {} g", s.weight),
+                    format!("しつけ     {} / 4", s.discipline),
+                    format!("ケアミス   {} かい", s.care_miss),
                 ];
                 for (i, row) in rows.iter().enumerate() {
                     draw::line(gfx, 22 + i as isize * 17, 16, GlyphStyle::Small, row);
                 }
-                draw::legend(gfx, "^ or > to go back");
+                draw::legend(gfx, "🔥 / → でもどる");
                 return;
             }
 
@@ -389,7 +387,7 @@ impl BadgeGame for VirtualPet {
         if s.asleep {
             // No menu bar while it sleeps: there is nothing to press.
             draw::creature(gfx, s.stage, Face::Asleep);
-            draw::legend(gfx, "sleeping...");
+            draw::legend(gfx, "おやすみ…");
             return;
         }
 
@@ -399,12 +397,12 @@ impl BadgeGame for VirtualPet {
         match &self.screen {
             Screen::Feed(cursor) => {
                 draw::list(gfx, &FEED_ITEMS, *cursor);
-                draw::legend(gfx, "< sel   ^ ok   > back");
+                draw::legend(gfx, "← えらぶ  🔥 きめる  → もどる");
             }
             _ => {
                 if s.stage == Stage::Egg {
                     // Nothing can be done for an egg, so it gets no icon bar.
-                    draw::legend(gfx, "not long now...");
+                    draw::legend(gfx, "うまれるまで…");
                 } else {
                     draw::menu_bar(gfx, &MENU, Some(self.cursor));
                     // The icons are two letters; the selected one gets its name
