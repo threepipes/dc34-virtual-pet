@@ -59,11 +59,12 @@ impl MiniGame {
     pub fn draw(&self, gfx: &Gfx) {
         use core::fmt::Write;
 
-        // The title is eight full-width glyphs at 17 px of advance each, which
-        // is wider than the screen. The box is two lines tall so that wordwrap
-        // breaks it rather than dropping the tail off the edge.
-        draw::wrapped(gfx, 2, 36, GlyphStyle::Bold, "あっちむいてホイ");
-        draw::line(gfx, 38, 17, GlyphStyle::Regular, "ひだり？みぎ？");
+        // Elided rather than wrapped: "あっちむいてホイ" is eight full-width
+        // glyphs at 17 px of advance, which does not fit 128 px, and a title
+        // broken across two lines cost more room than the tail was worth. The
+        // dots are ASCII, so they are narrow.
+        draw::line(gfx, 2, 18, GlyphStyle::Bold, "あっちむいて..");
+        draw::line(gfx, 22, 18, GlyphStyle::Regular, "ひだり？みぎ？");
 
         // The hands say which button does what, next to the pet that is about
         // to turn one way or the other. A written-out legend does not fit the
@@ -119,5 +120,5 @@ impl MiniGame {
 }
 
 /// Vertical centre of the pet, and the top of the bottom line.
-const PET_Y: isize = 76;
-const BOTTOM: isize = 105;
+const PET_Y: isize = 70;
+const BOTTOM: isize = 104;

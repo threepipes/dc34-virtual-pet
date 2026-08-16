@@ -63,15 +63,11 @@ pub fn text(gfx: &Gfx, bounds: Rectangle, style: GlyphStyle, invert: bool, s: &s
 }
 
 /// A line of text spanning the width of the screen, `top` pixels down.
+///
+/// Full-width glyphs advance 17 px whatever the style asks for, so seven of them
+/// is all one line holds; anything longer is dropped, not shrunk.
 pub fn line(gfx: &Gfx, top: isize, height: isize, style: GlyphStyle, s: &str) {
     text(gfx, Rectangle::new_coords(2, top, SCREEN - 3, top + height), style, false, s);
-}
-
-/// Same, but with room to wrap. Full-width glyphs advance 17 px whatever the
-/// style asks for, so seven of them is all a line holds; anything longer needs
-/// this rather than a taller guess at where to break it.
-pub fn wrapped(gfx: &Gfx, top: isize, bottom: isize, style: GlyphStyle, s: &str) {
-    text(gfx, Rectangle::new_coords(2, top, SCREEN - 3, bottom), style, false, s);
 }
 
 // -- Common furniture ---------------------------------------------------------
