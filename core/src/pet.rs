@@ -10,13 +10,19 @@ use crate::time::{awake_ms, is_asleep};
 
 // -- Lifetime -----------------------------------------------------------------
 
-/// A generation lasts this much cumulative uptime. `docs/spec.md`: 24 h.
-pub const LIFESPAN_MS: u64 = 24 * 60 * 60 * 1000;
+/// A generation lasts this much cumulative uptime.
+///
+/// TEMPORARY: `docs/spec.md` says 24 h. The teen and adult stages have been cut
+/// from 8 h each to the child stage's 6 h so that a whole loop -- hatch, four
+/// evolutions, generation change -- can be watched end to end, which drags the
+/// lifespan down with them. Put all three back together.
+pub const LIFESPAN_MS: u64 = 20 * 60 * 60 * 1000;
 
 const STAGE_BABY_MS: u64 = 10 * 60 * 1000;
 const STAGE_CHILD_MS: u64 = 2 * 60 * 60 * 1000;
 const STAGE_TEEN_MS: u64 = 8 * 60 * 60 * 1000;
-const STAGE_ADULT_MS: u64 = 16 * 60 * 60 * 1000;
+/// TEMPORARY: 16 h in the spec. See [`LIFESPAN_MS`].
+const STAGE_ADULT_MS: u64 = 14 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {

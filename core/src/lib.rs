@@ -255,8 +255,12 @@ mod tests {
         // Straight off the age axis: a neglected pet never reaches adulthood.
         assert_eq!(Stage::at(2 * HOUR), Stage::Child);
         assert_eq!(Stage::at(8 * HOUR), Stage::Teen);
-        assert_eq!(Stage::at(16 * HOUR), Stage::Adult);
+        assert_eq!(Stage::at(14 * HOUR), Stage::Adult);
         assert_eq!(Stage::at(LIFESPAN_MS), Stage::Adult);
+        // Every stage after the first two runs the same length while the
+        // shortened schedule is in place.
+        assert_eq!(LIFESPAN_MS - 14 * HOUR, 14 * HOUR - 8 * HOUR);
+        assert_eq!(14 * HOUR - 8 * HOUR, 8 * HOUR - 2 * HOUR);
     }
 
     #[test]
