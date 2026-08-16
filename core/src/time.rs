@@ -35,6 +35,29 @@ pub struct GameTime {
     pub minute: u64,
 }
 
+/// Roughly where in the day the pet is. The screen has no room for a clock, and
+/// a player mostly wants to know how long is left before bed rather than the
+/// hour -- `Night` is the warning that sleep is coming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeOfDay {
+    Morning,
+    Noon,
+    Evening,
+    Night,
+}
+
+impl TimeOfDay {
+    pub fn at(hour: u64) -> Self {
+        match hour {
+            6..=10 => TimeOfDay::Morning,
+            11..=16 => TimeOfDay::Noon,
+            17..=20 => TimeOfDay::Evening,
+            // 21:00 onwards, through the small hours until the pet wakes.
+            _ => TimeOfDay::Night,
+        }
+    }
+}
+
 /// In-game time at a given age.
 pub fn game_time(age_ms: u64) -> GameTime {
     let t = age_ms.saturating_add(START_OFFSET_MS);
@@ -122,6 +145,20 @@ mod tests {
             assert!(now >= prev, "awake_ms went backwards at {age}");
             prev = now;
         }
+    }
+
+    #[test]
+    fn the_day_is_divided_into_four() {
+        assert_eq!(TimeOfDay::at(8), TimeOfDay::Morning);
+        assert_eq!(TimeOfDay::at(12), TimeOfDay::Noon);
+        assert_eq!(TimeOfDay::at(18), TimeOfDay::Evening);
+        // Night has to cover both sides of midnight, including the hours the
+        // pet is actually asleep.
+        assert_eq!(TimeOfDay::at(22), TimeOfDay::Night);
+        assert_eq!(TimeOfDay::at(2), TimeOfDay::Night);
+        assert_eq!(TimeOfDay::at(5), TimeOfDay::Night);
+        // The pet wakes at 04:00, so morning starts a little after it is up.
+        assert_eq!(TimeOfDay::at(WAKE_HOUR), TimeOfDay::Night);
     }
 
     #[test]

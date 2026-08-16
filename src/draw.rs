@@ -8,7 +8,7 @@
 use core::fmt::Write;
 
 use blitstr2::GlyphStyle;
-use dc34_virtual_pet_core::{Snapshot, Stage, METER_MAX, POOP_MAX};
+use dc34_virtual_pet_core::{Snapshot, Stage, TimeOfDay, METER_MAX, POOP_MAX};
 use ux_api::minigfx::*;
 use ux_api::service::api::Gid;
 use ux_api::service::gfx::Gfx;
@@ -16,17 +16,21 @@ use ux_api::service::gfx::Gfx;
 // -- Layout -------------------------------------------------------------------
 
 pub const SCREEN: isize = 128;
-/// Generation, day and the two meters.
-pub const STATUS_H: isize = 16;
-/// Top of the six-icon bar. 18 px rather than 16 so a glyph plus its margin
-/// fits without the row being clipped.
+/// Generation and day on one row, the part of day and the two meters on the
+/// next. One row cannot hold all of it: "Gen:1 Day:1" and eight pips together
+/// already fill 128 px, and the part of day is two more full-width glyphs.
+pub const STATUS_H: isize = 32;
+/// Top of the icon bar. 18 px rather than 16 so a glyph plus its margin fits
+/// without the row being clipped.
 pub const MENU_TOP: isize = SCREEN - 18;
-/// The creature's 96 px square, between the two bars.
+/// The creature's area, between the two bars.
 pub const FIELD_TOP: isize = STATUS_H;
 pub const FIELD_BOTTOM: isize = MENU_TOP;
 
 const CENTER_X: isize = SCREEN / 2;
-const CENTER_Y: isize = (FIELD_TOP + FIELD_BOTTOM) / 2;
+/// The creature sits above the trouble row rather than in the middle of the
+/// field, so that a full-grown adult does not overlap it.
+const CENTER_Y: isize = FIELD_TOP + 29;
 
 const INK: PixelColor = PixelColor::Dark;
 const PAPER: PixelColor = PixelColor::Light;
@@ -72,38 +76,54 @@ pub fn line(gfx: &Gfx, top: isize, height: isize, style: GlyphStyle, s: &str) {
 
 // -- Common furniture ---------------------------------------------------------
 
-/// Generation and age on the left, mood and fullness on the right.
+/// Generation and day up top; part of day and the two meters underneath.
 pub fn status_bar(gfx: &Gfx, s: &Snapshot) {
     let mut label = String::new();
-    write!(label, "G{} D{}", s.generation, s.time.day).ok();
-    text(gfx, Rectangle::new_coords(2, 1, 56, STATUS_H - 1), GlyphStyle::Small, false, &label);
+    // Spelled out rather than "G1 D1", which reads as a part number.
+    write!(label, "Gen:{}   Day:{}", s.generation, s.time.day).ok();
+    text(gfx, Rectangle::new_coords(2, 0, SCREEN - 3, 15), GlyphStyle::Small, false, &label);
 
-    meter(gfx, 62, s.mood);
-    meter(gfx, 96, s.hunger);
+    // Roughly how far off bedtime is. The pet sleeps from midnight, so 「よる」
+    // is the cue to get the last of the day's care in.
+    let part = match s.part_of_day {
+        TimeOfDay::Morning => "あさ",
+        TimeOfDay::Noon => "ひる",
+        TimeOfDay::Evening => "ゆう",
+        TimeOfDay::Night => "よる",
+    };
+    text(gfx, Rectangle::new_coords(2, 15, 44, 32), GlyphStyle::Regular, false, part);
+
+    meter(gfx, 48, s.mood);
+    meter(gfx, 92, s.hunger);
 }
 
-/// Four pips, filled up to `level`.
+/// Four pips, filled up to `level`, on the second status row.
 fn meter(gfx: &Gfx, left: isize, level: u8) {
     for i in 0..METER_MAX as isize {
         let x = left + i * 8;
         let pip = Rectangle::new_coords_with_style(
             x,
-            4,
+            19,
             x + 5,
-            11,
+            26,
             if i < level as isize { filled() } else { stroke(1) },
         );
         gfx.draw_rectangle(pip).ok();
     }
 }
 
-/// The six-icon bar. `cursor` is `None` when nothing is selected.
+/// The icon bar: a black strip, with the selected cell knocked out white. The
+/// bar reads as one object that way, and the cursor as a hole in it, which is
+/// easier to find at a glance than one dark cell among light ones.
 pub fn menu_bar(gfx: &Gfx, labels: &[&str], cursor: Option<usize>) {
     let cell = SCREEN / labels.len() as isize;
     for (i, label) in labels.iter().enumerate() {
         let x = i as isize * cell;
-        let bounds = Rectangle::new_coords(x, MENU_TOP, x + cell - 1, SCREEN - 1);
-        text(gfx, bounds, GlyphStyle::Regular, cursor == Some(i), label);
+        // The last cell runs to the edge, so the bar has no white sliver left
+        // over from the division.
+        let right = if i + 1 == labels.len() { SCREEN - 1 } else { x + cell - 1 };
+        let bounds = Rectangle::new_coords(x, MENU_TOP, right, SCREEN - 1);
+        text(gfx, bounds, GlyphStyle::Regular, cursor != Some(i), label);
     }
 }
 
@@ -133,10 +153,10 @@ pub fn legend(gfx: &Gfx, s: &str) {
 /// Body radius by stage. Growing is most of what evolution looks like here.
 fn body_radius(stage: Stage) -> isize {
     match stage {
-        Stage::Egg | Stage::Baby => 14,
-        Stage::Child => 19,
-        Stage::Teen => 24,
-        Stage::Adult => 28,
+        Stage::Egg | Stage::Baby => 13,
+        Stage::Child => 17,
+        Stage::Teen => 22,
+        Stage::Adult => 26,
     }
 }
 

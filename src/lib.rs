@@ -340,7 +340,7 @@ impl BadgeGame for VirtualPet {
                 draw::creature(gfx, s.stage, Face::Dead);
                 let (title, detail) = match outcome {
                     Outcome::Lifespan => ("じゅみょうをまっとうした", "とくせいをひきついだ"),
-                    Outcome::CareFailure => ("おわってしまった…", "せだいは 1 にもどる"),
+                    Outcome::CareFailure => ("しんでしまった", "せだいは 1 にもどる"),
                 };
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
                 draw::line(gfx, 90, 16, GlyphStyle::Small, detail);
@@ -425,8 +425,11 @@ impl BadgeGame for VirtualPet {
             }
         }
 
+        // Along the bottom of the field, over the trouble row rather than over
+        // the creature's head. Drawn last, so it covers the droppings for the
+        // second and a half it is up.
         if let Some((text, _)) = &self.message {
-            draw::line(gfx, draw::FIELD_TOP + 2, 16, GlyphStyle::Bold, text);
+            draw::line(gfx, draw::FIELD_BOTTOM - 20, 18, GlyphStyle::Bold, text);
         }
     }
 }

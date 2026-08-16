@@ -22,7 +22,7 @@ pub use pet::{
     ActionResult, Outcome, Pet, Refusal, Stage, CARE_MISS_LIMIT, DISCIPLINE_MAX, LIFESPAN_MS,
     METER_MAX, POOP_MAX,
 };
-pub use time::{game_time, is_asleep, GameTime, UPTIME_MS_PER_GAME_DAY};
+pub use time::{game_time, is_asleep, GameTime, TimeOfDay, UPTIME_MS_PER_GAME_DAY};
 
 /// Debug accelerator. At 1 the game runs in real time, which puts a full
 /// lifespan a day away; at 60 it takes 24 minutes, which is short enough to
@@ -70,6 +70,7 @@ impl Game {
         Snapshot {
             generation: self.generation,
             time: game_time(p.age_ms()),
+            part_of_day: TimeOfDay::at(game_time(p.age_ms()).hour),
             age_ms: p.age_ms(),
             stage: p.stage(),
             hunger: p.hunger(),
@@ -112,6 +113,7 @@ impl Game {
 pub struct Snapshot {
     pub generation: u32,
     pub time: GameTime,
+    pub part_of_day: TimeOfDay,
     pub age_ms: u64,
     pub stage: Stage,
     pub hunger: u8,
