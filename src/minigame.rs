@@ -38,7 +38,9 @@ impl MiniGame {
         self.rng & 1
     }
 
-    pub fn toggle(&mut self) { self.choice ^= 1; }
+    /// Point left (0) or right (1). The two outer buttons map straight onto
+    /// this, so pressing the side you mean is the whole interaction.
+    pub fn choose(&mut self, side: u32) { self.choice = side & 1; }
 
     /// Play the round out. Returns the number of rounds won once the series is
     /// over, and `None` while it is still going.
@@ -56,7 +58,7 @@ impl MiniGame {
     pub fn draw(&self, gfx: &Gfx) {
         let mut header = String::new();
         use core::fmt::Write;
-        write!(header, "あそぶ  {}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
+        write!(header, "PLAY  {}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
         draw::line(gfx, 2, 16, GlyphStyle::Bold, &header);
 
         // The pet leans the way it turned last round, so the reveal is visible
@@ -80,18 +82,18 @@ impl MiniGame {
         }
 
         if let Some((_, right)) = self.last {
-            draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "あたり！" } else { "はずれ" });
+            draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "HIT!" } else { "miss" });
         }
 
         let mut choices = String::new();
         write!(
             choices,
-            "{}ひだり   {}みぎ",
-            if self.choice == 0 { "\u{25b6}" } else { " " },
-            if self.choice == 1 { "\u{25b6}" } else { " " }
+            "{}LEFT     {}RIGHT",
+            if self.choice == 0 { ">" } else { " " },
+            if self.choice == 1 { ">" } else { " " }
         )
         .ok();
         draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, &choices);
-        draw::legend(gfx, "← えらぶ  🔥 きめる  → やめる");
+        draw::legend(gfx, "< left   ^ ok   > right");
     }
 }

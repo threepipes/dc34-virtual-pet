@@ -18,8 +18,8 @@ use ux_api::service::gfx::Gfx;
 pub const SCREEN: isize = 128;
 /// Generation, day and the two meters.
 pub const STATUS_H: isize = 16;
-/// Top of the six-icon bar. 18 px rather than 16: the icons are kana, and the
-/// Japanese font is 16 px tall before the one-pixel margin either side.
+/// Top of the six-icon bar. 18 px rather than 16 so a glyph plus its margin
+/// fits without the row being clipped.
 pub const MENU_TOP: isize = SCREEN - 18;
 /// The creature's 96 px square, between the two bars.
 pub const FIELD_TOP: isize = STATUS_H;
@@ -55,8 +55,8 @@ pub fn text(gfx: &Gfx, bounds: Rectangle, style: GlyphStyle, invert: bool, s: &s
     tv.draw_border = false;
     tv.style = style;
     tv.invert = invert;
-    // The default 4 px margin costs 8 px of a 21 px menu cell, which a 16 px
-    // kana does not survive.
+    // The default 4 px margin costs 8 px of a 21 px menu cell, which is more
+    // than the cell can spare.
     tv.margin = Point::new(1, 1);
     write!(tv, "{}", s).ok();
     gfx.draw_textview(&mut tv).ok();
@@ -115,7 +115,7 @@ pub fn list(gfx: &Gfx, items: &[&str], cursor: usize) {
     for (i, item) in items.iter().enumerate() {
         let y = top + 4 + i as isize * ROW;
         let mut row = String::new();
-        write!(row, "{}{}", if i == cursor { "\u{25b6}" } else { " " }, item).ok();
+        write!(row, "{}{}", if i == cursor { "> " } else { "  " }, item).ok();
         text(gfx, Rectangle::new_coords(18, y, SCREEN - 19, y + ROW), GlyphStyle::Regular, false, &row);
     }
 }
