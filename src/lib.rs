@@ -11,6 +11,7 @@
 
 mod draw;
 mod minigame;
+mod store;
 
 use blitstr2::GlyphStyle;
 use dc34_virtual_pet_core::{GameState, Outcome, Refusal, Snapshot, Stage};
@@ -37,6 +38,13 @@ const KEY_MENU: char = '∴';
 
 /// How long a reaction stays on screen.
 const MESSAGE_MS: u64 = 1500;
+
+/// Longest the game will go without writing itself to flash while it is being
+/// played. Actions save immediately; this is for the time that passes between
+/// them, which is most of it. A minute of host time is an in-game hour at the
+/// current scale, and at roughly 60 writes an hour the SPI NOR's 100k cycles
+/// are not a concern.
+const AUTOSAVE_MS: u64 = 60_000;
 
 // -- On-screen text -----------------------------------------------------------
 // Japanese needs the fork of xous-core: upstream's blitstr2 never reaches the ja
@@ -106,6 +114,11 @@ pub struct VirtualPet {
     /// handed the time itself. `tick()` runs often enough for this to be exact
     /// to within a frame.
     now_ms: u64,
+    /// Host clock at the last write to flash.
+    saved_at_ms: u64,
+    /// Whether the save file has been read yet. The first `start()` does it;
+    /// later ones must not, or re-entering the game would undo the session.
+    loaded: bool,
 }
 
 impl Default for VirtualPet {
@@ -121,7 +134,16 @@ impl VirtualPet {
             last_stage: Stage::Egg,
             message: None,
             now_ms: 0,
+            saved_at_ms: 0,
+            loaded: false,
         }
+    }
+
+    /// Write the game out and note when. Failures are silent here: the player
+    /// finds out from the ones they asked for.
+    fn persist(&mut self) {
+        store::save(self.state.game());
+        self.saved_at_ms = self.now_ms;
     }
 
     fn snapshot(&self) -> Snapshot { self.state.game().snapshot() }
@@ -156,14 +178,17 @@ impl VirtualPet {
             MENU_CLEAN => {
                 let r = self.state.game_mut().pet_mut().clean();
                 self.report(r, "きれいになった");
+                self.persist();
             }
             MENU_MEDICINE => {
                 let r = self.state.game_mut().pet_mut().medicate();
                 self.report(r, "なおった！");
+                self.persist();
             }
             MENU_SCOLD => {
                 let r = self.state.game_mut().pet_mut().scold();
                 self.report(r, "しかった");
+                self.persist();
             }
             _ => {}
         }
@@ -174,6 +199,7 @@ impl VirtualPet {
         let won = wins >= 3;
         self.state.game_mut().pet_mut().play_result(won).ok();
         self.say(if won { "たのしかった！" } else { "まあまあかな" });
+        self.persist();
         self.screen = Screen::Main;
     }
 
@@ -197,9 +223,19 @@ impl VirtualPet {
 
 impl BadgeGame for VirtualPet {
     fn start(&mut self, now_ms: u64) {
+        // Read the save file once per boot. `start()` runs again every time the
+        // player comes back to the game, and re-reading then would throw away
+        // everything since the last write.
+        if !self.loaded {
+            self.loaded = true;
+            if let Some(saved) = store::load() {
+                self.state.resume(saved);
+            }
+        }
         // The clock is re-anchored but the pet is not: `GameState` banks the
         // uptime, so leaving the game and coming back costs it nothing.
         self.state.start(now_ms);
+        self.saved_at_ms = now_ms;
         self.now_ms = now_ms;
         self.screen = Screen::Main;
         self.cursor = 0;
@@ -215,6 +251,10 @@ impl BadgeGame for VirtualPet {
             if now_ms >= deadline {
                 self.message = None;
             }
+        }
+
+        if now_ms.saturating_sub(self.saved_at_ms) >= AUTOSAVE_MS {
+            self.persist();
         }
 
         // Growing up and dying interrupt whatever is on screen: both are one-off
@@ -241,6 +281,9 @@ impl BadgeGame for VirtualPet {
         // everything else so that there is always a way out, including while the
         // pet is asleep and ignoring the front buttons.
         if k == KEY_MENU {
+            // Last chance: leaving the game is the closest thing to a warning
+            // that the cable is about to come out.
+            self.persist();
             return GameAction::Exit;
         }
 
@@ -280,6 +323,7 @@ impl BadgeGame for VirtualPet {
                         (pet.feed_snack(), "もぐもぐ")
                     };
                     self.report(r, done);
+                    self.persist();
                     self.screen = Screen::Main;
                 }
                 KEY_CANCEL => self.screen = Screen::Main,
@@ -316,6 +360,7 @@ impl BadgeGame for VirtualPet {
             Screen::Ended(_) => {
                 if k == KEY_OK {
                     self.state.game_mut().next_generation();
+                    self.persist();
                     self.last_stage = self.snapshot().stage;
                     self.screen = Screen::Main;
                 }

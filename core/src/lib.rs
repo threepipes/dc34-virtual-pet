@@ -16,12 +16,14 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod pet;
+pub mod save;
 pub mod time;
 
 pub use pet::{
     ActionResult, Outcome, Pet, Refusal, Stage, CARE_MISS_LIMIT, DISCIPLINE_MAX, LIFESPAN_MS,
     METER_MAX, POOP_MAX,
 };
+pub use save::{SAVE_LEN};
 pub use time::{game_time, is_asleep, GameTime, TimeOfDay, UPTIME_MS_PER_GAME_DAY};
 
 /// Debug accelerator. At 1 the game runs in real time, which puts a full
@@ -60,7 +62,21 @@ impl Game {
     }
 
     pub fn uptime_ms(&self) -> u64 { self.uptime_ms }
+    pub fn gen_start_ms(&self) -> u64 { self.gen_start_ms }
     pub fn generation(&self) -> u32 { self.generation }
+    pub fn inherited(&self) -> u8 { self.inherited }
+
+    /// Rebuild from a save file. Only [`save`] should be calling this.
+    pub fn restore(uptime_ms: u64, gen_start_ms: u64, generation: u32, inherited: u8, pet: Pet) -> Self {
+        Self { uptime_ms, gen_start_ms, generation, inherited, pet }
+    }
+
+    /// Serialise for the host to store.
+    pub fn to_bytes(&self) -> [u8; SAVE_LEN] { save::to_bytes(self) }
+
+    /// Read back what [`Game::to_bytes`] wrote. `None` if it is not a save file
+    /// this build understands.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> { save::from_bytes(bytes) }
     pub fn pet(&self) -> &Pet { &self.pet }
     pub fn pet_mut(&mut self) -> &mut Pet { &mut self.pet }
 
@@ -153,6 +169,13 @@ impl Default for GameState {
 impl GameState {
     pub fn new() -> Self {
         Self { banked_ms: 0, start_ms: 0, now_ms: 0, game: Game::new() }
+    }
+
+    /// Adopt a game read back from a save file, and bank its uptime so the
+    /// clock carries on from there rather than from zero.
+    pub fn resume(&mut self, game: Game) {
+        self.banked_ms = game.uptime_ms();
+        self.game = game;
     }
 
     /// Re-take the time reference. Called every time the game is entered; the
@@ -570,6 +593,67 @@ mod tests {
                 step / MIN
             );
         }
+    }
+
+    // -- Saving ---------------------------------------------------------------
+
+    #[test]
+    fn a_saved_game_comes_back_the_same() {
+        // A pet with something in every field: fed, played with, ill, scolded,
+        // and carrying care misses.
+        let mut g = simulate(5 * HOUR, |g| {
+            let p = g.pet_mut();
+            p.scold().ok();
+            if p.hunger() == 0 {
+                p.feed_meal().ok();
+            }
+        });
+        g.pet_mut().feed_snack().ok();
+        assert!(g.pet().care_miss() > 0 && g.pet().poop() > 0);
+
+        let bytes = g.to_bytes();
+        let back = Game::from_bytes(&bytes).expect("should read its own output");
+        assert_eq!(g.snapshot(), back.snapshot());
+        assert_eq!(g.uptime_ms(), back.uptime_ms());
+
+        // And it carries on from where it left off, rather than from a guess.
+        let mut a = g;
+        let mut b = back;
+        a.advance_to(a.uptime_ms() + 3 * HOUR);
+        b.advance_to(b.uptime_ms() + 3 * HOUR);
+        assert_eq!(a.snapshot(), b.snapshot());
+    }
+
+    #[test]
+    fn a_saved_lineage_keeps_what_it_inherited() {
+        let mut g = simulate(21 * HOUR, attentive);
+        assert_eq!(g.pet().outcome(), Some(Outcome::Lifespan));
+        g.next_generation();
+        assert_eq!(g.generation(), 2);
+
+        let back = Game::from_bytes(&g.to_bytes()).unwrap();
+        assert_eq!(back.generation(), 2);
+
+        // The inherited slow-down is not stored, it is rebuilt -- so this is
+        // what proves it was rebuilt correctly.
+        let probe = g.uptime_ms() + HATCH + 30 * MIN;
+        let mut a = g;
+        let mut b = back;
+        a.advance_to(probe);
+        b.advance_to(probe);
+        assert_eq!(a.snapshot(), b.snapshot());
+        assert!(a.pet().hunger() > neglected(HATCH + 30 * MIN).pet().hunger());
+    }
+
+    #[test]
+    fn rubbish_is_not_a_save_file() {
+        assert!(Game::from_bytes(&[]).is_none());
+        assert!(Game::from_bytes(&[0u8; SAVE_LEN]).is_none(), "version 0 is not this format");
+        let mut bytes = Game::new().to_bytes();
+        assert!(Game::from_bytes(&bytes).is_some());
+        // A pet older than the lineage it belongs to cannot have happened.
+        bytes[9..17].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(Game::from_bytes(&bytes).is_none());
     }
 
     #[test]

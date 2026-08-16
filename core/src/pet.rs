@@ -192,6 +192,50 @@ impl Pet {
         }
     }
 
+    // -- Persistence ----------------------------------------------------------
+
+    /// Everything this pet keeps that is not derived. The decay periods are
+    /// left out on purpose: they follow from the inherited discipline the
+    /// constructor is given, so storing them again would let the two disagree.
+    pub fn save_state(&self) -> crate::save::PetState {
+        crate::save::PetState {
+            age_ms: self.age_ms,
+            hunger_at_anchor: self.hunger_at_anchor,
+            hunger_anchor_ms: self.hunger_anchor_ms,
+            hunger_misses: self.hunger_misses,
+            mood_at_anchor: self.mood_at_anchor,
+            mood_anchor_ms: self.mood_anchor_ms,
+            mood_misses: self.mood_misses,
+            poop_cleaned_ms: self.poop_cleaned_ms,
+            sick_since_ms: self.sick_since_ms,
+            sick_misses: self.sick_misses,
+            scolded_this_alert: self.scolded_this_alert,
+            care_miss: self.care_miss,
+            weight: self.weight,
+            discipline: self.discipline,
+            outcome: self.outcome,
+        }
+    }
+
+    /// Put a saved pet back. Call on a pet built with the matching `inherited`.
+    pub fn restore(&mut self, s: &crate::save::PetState) {
+        self.age_ms = s.age_ms.min(LIFESPAN_MS);
+        self.hunger_at_anchor = s.hunger_at_anchor.min(METER_MAX);
+        self.hunger_anchor_ms = s.hunger_anchor_ms;
+        self.hunger_misses = s.hunger_misses;
+        self.mood_at_anchor = s.mood_at_anchor.min(METER_MAX);
+        self.mood_anchor_ms = s.mood_anchor_ms;
+        self.mood_misses = s.mood_misses;
+        self.poop_cleaned_ms = s.poop_cleaned_ms;
+        self.sick_since_ms = s.sick_since_ms;
+        self.sick_misses = s.sick_misses;
+        self.scolded_this_alert = s.scolded_this_alert;
+        self.care_miss = s.care_miss;
+        self.weight = s.weight;
+        self.discipline = s.discipline.min(DISCIPLINE_MAX);
+        self.outcome = s.outcome;
+    }
+
     // -- Derived state --------------------------------------------------------
 
     pub fn age_ms(&self) -> u64 { self.age_ms }

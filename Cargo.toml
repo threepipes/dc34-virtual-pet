@@ -11,8 +11,12 @@ dc34-virtual-pet-core = { path = "./core" }
 # redirects these to the local xous-core checkout, applies to us too.
 ux-api = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
 blitstr2 = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
+# The save file. Depending on the badge's own database rather than asking the
+# host for a blob store keeps the `BadgeGame` contract to screen, keys and
+# clock -- the host does not have to know the game saves anything.
+pddb = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
 
 [features]
-board-baosec = ["ux-api/board-baosec", "blitstr2/board-baosec"]
-hosted-baosec = ["ux-api/hosted-baosec"]
+board-baosec = ["ux-api/board-baosec", "blitstr2/board-baosec", "pddb/board-baosec"]
+hosted-baosec = ["ux-api/hosted-baosec", "pddb/hosted-baosec"]
 default = []

@@ -19,8 +19,11 @@ DEF CON 34 のバッジ（Baochip-1x / baosec）上で稼働する、ペット�
 ```
 dc34-virtual-pet/
 ├── core/     -- Xous 非依存のゲームロジック。cargo test が普通に回る
-└── src/      -- Xous 依存の描画・入力アダプタ。BadgeGame trait を実装
+└── src/      -- Xous 依存の描画・入力・保存。BadgeGame trait を実装
 ```
+
+セーブは PDDB の dict `dc34.game` / key `virtual-pet` に 73 バイト固定長で置く。
+ホストは保存の存在を知らない — `BadgeGame` は画面・キー・時計だけの契約のまま。
 
 ゲームロジックを Xous から切り離しておくことで、
 「72 時間放置したら死ぬ」といった長時間シナリオを `cargo test` で一瞬で検証できる。
