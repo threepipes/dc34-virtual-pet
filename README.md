@@ -82,5 +82,15 @@ pub trait BadgeGame {
 
 ## 依存の方針
 
-配布を見据えて、**恒久的に改変するのは `dc34-vault` とこのリポジトリだけ**に留める。
-`xous-core` / `dc34-api` / `dc34-console` は公式のまま使う。
+配布を見据えて、改変は最小限に留める。`dc34-api` は公式のまま。
+
+`xous-core` は当初「公式のまま」で進めていたが、**日本語表示のために fork が必要になった**。
+上流の `blitstr2` は、baosec イメージに焼いている `ja` フォントに到達できない
+（`english_rules` のフォールバック先が実際の同梱フォントとずれている、
+`style_glyph()` のロケール比較が `"jp"` で `locales` の `"ja"` と一致しない）。
+修正は [threepipes/xous-core](https://github.com/threepipes/xous-core) の
+`fix/baosec-cjk-fallback` ブランチにある。上流の `dev` を基点にした 1 コミットで、
+そのまま PR にできる形にしてある。
+
+素の `xous-core` でもビルドは通るが、画面上のかな・漢字がすべて U+FFFD になる。
+メニューのアイコン（絵文字）は上流でも表示される。
