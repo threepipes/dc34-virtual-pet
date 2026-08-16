@@ -231,6 +231,10 @@ impl BadgeGame for VirtualPet {
         } else if s.stage != self.last_stage {
             self.screen = Screen::Evolved;
             self.message = None;
+        } else if s.asleep && matches!(self.screen, Screen::Feed(_) | Screen::Play(_)) {
+            // Nightfall in a submenu would strand the player: every button it
+            // listens for is one a sleeping pet ignores.
+            self.screen = Screen::Main;
         }
         self.last_stage = s.stage;
     }
@@ -245,8 +249,15 @@ impl BadgeGame for VirtualPet {
 
         let s = self.snapshot();
 
-        // A sleeping pet takes no orders -- `docs/UI.md` §3.7.
+        // A sleeping pet takes no orders -- `docs/UI.md` §3.7. Reading its
+        // status is not an order, though, so that one stays reachable: it is
+        // the screen with nothing on it that could disturb the pet.
         if s.asleep && s.outcome.is_none() && !matches!(self.screen, Screen::Ended(_)) {
+            match (&self.screen, k) {
+                (Screen::Main, KEY_CANCEL) => self.screen = Screen::Status,
+                (Screen::Status, KEY_OK | KEY_CANCEL) => self.screen = Screen::Main,
+                _ => {}
+            }
             return GameAction::Continue;
         }
 
