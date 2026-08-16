@@ -38,13 +38,14 @@ impl MiniGame {
         self.rng & 1
     }
 
-    /// Point left (0) or right (1). The two outer buttons map straight onto
-    /// this, so pressing the side you mean is the whole interaction.
-    pub fn choose(&mut self, side: u32) { self.choice = side & 1; }
-
-    /// Play the round out. Returns the number of rounds won once the series is
-    /// over, and `None` while it is still going.
-    pub fn confirm(&mut self) -> Option<u32> {
+    /// Call the round: point left (0) or right (1). One press is the whole
+    /// interaction -- there is nothing to confirm, because there is nothing the
+    /// player could have meant other than the side they pressed.
+    ///
+    /// Returns the number of rounds won once the series is over, and `None`
+    /// while it is still going.
+    pub fn answer(&mut self, side: u32) -> Option<u32> {
+        self.choice = side & 1;
         let answer = self.next_bit();
         let right = answer == self.choice;
         if right {
@@ -85,15 +86,7 @@ impl MiniGame {
             draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "HIT!" } else { "miss" });
         }
 
-        let mut choices = String::new();
-        write!(
-            choices,
-            "{}LEFT     {}RIGHT",
-            if self.choice == 0 { ">" } else { " " },
-            if self.choice == 1 { ">" } else { " " }
-        )
-        .ok();
-        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, &choices);
-        draw::legend(gfx, "< left   ^ ok   > right");
+        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, "LEFT       RIGHT");
+        draw::legend(gfx, "< left   ^ stop   > right");
     }
 }

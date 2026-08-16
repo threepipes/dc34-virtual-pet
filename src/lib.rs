@@ -19,8 +19,9 @@ use minigame::MiniGame;
 use ux_api::service::gfx::Gfx;
 
 // -- Buttons ------------------------------------------------------------------
-// The three front buttons, in physical left-to-right order. These codes are the
-// same in hosted mode and on hardware, so there is no per-target branching here.
+// The three front buttons, in physical left-to-right order, plus the jog press.
+// These codes are the same in hosted mode and on hardware, so there is no
+// per-target branching here.
 
 /// Left button: move the cursor.
 const KEY_SELECT: char = '←';
@@ -30,8 +31,7 @@ const KEY_OK: char = '🔥';
 const KEY_CANCEL: char = '→';
 /// Jog press. The only way back to the badge menu: it sits away from the three
 /// front buttons, so it is hard to hit by accident, and it matches what the
-/// official app uses the key for. Cancel used to do this from the main screen
-/// and it fired by mistake too easily.
+/// official app uses the key for.
 const KEY_MENU: char = '∴';
 
 /// How long a reaction stays on screen.
@@ -47,19 +47,17 @@ const MESSAGE_MS: u64 = 1500;
 // Fixing either would mean patching xous-core, which this project keeps stock.
 
 /// The main screen's icon bar, in cursor order.
-const MENU: [&str; 6] = ["FD", "PL", "CL", "MD", "SC", "MN"];
+const MENU: [&str; 5] = ["FD", "PL", "CL", "MD", "SC"];
 /// What each icon means, shown while it is selected.
-const MENU_NAMES: [&str; 6] = ["FEED", "PLAY", "CLEAN", "MEDICINE", "SCOLD", "MENU"];
+const MENU_NAMES: [&str; 5] = ["FEED", "PLAY", "CLEAN", "MEDICINE", "SCOLD"];
 
 const MENU_FEED: usize = 0;
 const MENU_PLAY: usize = 1;
 const MENU_CLEAN: usize = 2;
 const MENU_MEDICINE: usize = 3;
 const MENU_SCOLD: usize = 4;
-const MENU_SYSTEM: usize = 5;
 
 const FEED_ITEMS: [&str; 2] = ["MEAL", "SNACK"];
-const SYSTEM_ITEMS: [&str; 3] = ["STATUS", "SAVE", "QUIT"];
 
 /// What the host should do after handing a key to the game.
 pub enum GameAction {
@@ -87,11 +85,8 @@ pub fn new_game() -> Box<dyn BadgeGame> { Box::new(VirtualPet::new()) }
 
 /// Which screen is up. `docs/UI.md` §4 is the transition diagram this follows.
 enum Screen {
-    /// Main screen. `None` means nothing is selected -- the state Cancel returns
-    /// you to, and the one the pet is left alone in.
-    Main(Option<usize>),
+    Main,
     Feed(usize),
-    System(usize),
     Status,
     Play(MiniGame),
     /// A stage was reached. Blocks until acknowledged so it cannot be missed.
@@ -103,6 +98,9 @@ enum Screen {
 pub struct VirtualPet {
     state: GameState,
     screen: Screen,
+    /// Position on the main screen's icon bar. Kept out of `Screen` so that a
+    /// trip through the status screen comes back to the same icon.
+    cursor: usize,
     /// Stage as of the last frame, to notice evolution.
     last_stage: Stage,
     /// Text to show at the bottom of the field, and when it disappears.
@@ -121,7 +119,8 @@ impl VirtualPet {
     pub fn new() -> Self {
         Self {
             state: GameState::new(),
-            screen: Screen::Main(None),
+            screen: Screen::Main,
+            cursor: 0,
             last_stage: Stage::Egg,
             message: None,
             now_ms: 0,
@@ -169,7 +168,6 @@ impl VirtualPet {
                 let r = self.state.game_mut().pet_mut().scold();
                 self.report(r, "told off");
             }
-            MENU_SYSTEM => self.screen = Screen::System(0),
             _ => {}
         }
     }
@@ -179,7 +177,7 @@ impl VirtualPet {
         let won = wins >= 3;
         self.state.game_mut().pet_mut().play_result(won).ok();
         self.say(if won { "that was fun!" } else { "not bad" });
-        self.screen = Screen::Main(None);
+        self.screen = Screen::Main;
     }
 
     /// The face for the pet's current state, most urgent first.
@@ -206,7 +204,8 @@ impl BadgeGame for VirtualPet {
         // uptime, so leaving the game and coming back costs it nothing.
         self.state.start(now_ms);
         self.now_ms = now_ms;
-        self.screen = Screen::Main(None);
+        self.screen = Screen::Main;
+        self.cursor = 0;
         self.message = None;
         self.last_stage = self.snapshot().stage;
     }
@@ -252,17 +251,13 @@ impl BadgeGame for VirtualPet {
         }
 
         match &mut self.screen {
-            Screen::Main(cursor) => match k {
-                KEY_SELECT => *cursor = Some(cursor.map_or(0, |i| (i + 1) % MENU.len())),
-                KEY_OK => {
-                    if let Some(item) = *cursor {
-                        self.run_menu_item(item);
-                    }
-                }
-                // Cancel only ever drops the selection here. It used to hand the
-                // badge back once nothing was selected, which fired by accident;
-                // leaving the game is the jog press's job now.
-                KEY_CANCEL => *cursor = None,
+            Screen::Main => match k {
+                KEY_SELECT => self.cursor = (self.cursor + 1) % MENU.len(),
+                KEY_OK => self.run_menu_item(self.cursor),
+                // Nothing to back out of on the main screen, so Cancel is free
+                // to open the status sheet. That is the only way in now that the
+                // system submenu is gone.
+                KEY_CANCEL => self.screen = Screen::Status,
                 _ => {}
             },
 
@@ -277,48 +272,36 @@ impl BadgeGame for VirtualPet {
                         (pet.feed_snack(), "yum!")
                     };
                     self.report(r, done);
-                    self.screen = Screen::Main(None);
+                    self.screen = Screen::Main;
                 }
-                KEY_CANCEL => self.screen = Screen::Main(Some(MENU_FEED)),
-                _ => {}
-            },
-
-            Screen::System(cursor) => match k {
-                KEY_SELECT => *cursor = (*cursor + 1) % SYSTEM_ITEMS.len(),
-                KEY_OK => match *cursor {
-                    0 => self.screen = Screen::Status,
-                    // Persistence is not built yet. Saying so is better than a
-                    // reassuring message over a save that did not happen.
-                    1 => self.say("no save yet"),
-                    _ => return GameAction::Exit,
-                },
-                KEY_CANCEL => self.screen = Screen::Main(Some(MENU_SYSTEM)),
+                KEY_CANCEL => self.screen = Screen::Main,
                 _ => {}
             },
 
             Screen::Status => {
                 if k == KEY_OK || k == KEY_CANCEL {
-                    self.screen = Screen::Main(Some(MENU_SYSTEM));
+                    self.screen = Screen::Main;
                 }
             }
 
-            // The only screen where the two outer buttons are not select and
-            // cancel: pointing left and right is the whole game, so they map
-            // straight onto the answer.
+            // The one screen where the outer buttons are neither select nor
+            // cancel: pointing left and right is the whole game, so they are the
+            // answer, and pressing one plays the round outright. That leaves the
+            // center button free to be the way out.
             Screen::Play(game) => match k {
-                KEY_SELECT => game.choose(0),
-                KEY_CANCEL => game.choose(1),
-                KEY_OK => {
-                    if let Some(wins) = game.confirm() {
+                KEY_SELECT | KEY_CANCEL => {
+                    let side = if k == KEY_SELECT { 0 } else { 1 };
+                    if let Some(wins) = game.answer(side) {
                         self.finish_minigame(wins);
                     }
                 }
+                KEY_OK => self.screen = Screen::Main,
                 _ => {}
             },
 
             Screen::Evolved => {
                 if k == KEY_OK {
-                    self.screen = Screen::Main(None);
+                    self.screen = Screen::Main;
                 }
             }
 
@@ -326,7 +309,7 @@ impl BadgeGame for VirtualPet {
                 if k == KEY_OK {
                     self.state.game_mut().next_generation();
                     self.last_stage = self.snapshot().stage;
-                    self.screen = Screen::Main(None);
+                    self.screen = Screen::Main;
                 }
             }
         }
@@ -377,7 +360,7 @@ impl BadgeGame for VirtualPet {
                 for (i, row) in rows.iter().enumerate() {
                     draw::line(gfx, 22 + i as isize * 17, 16, GlyphStyle::Small, row);
                 }
-                draw::legend(gfx, "> back");
+                draw::legend(gfx, "^ or > to go back");
                 return;
             }
 
@@ -386,10 +369,10 @@ impl BadgeGame for VirtualPet {
                 return;
             }
 
-            Screen::Main(_) | Screen::Feed(_) | Screen::System(_) => {}
+            Screen::Main | Screen::Feed(_) => {}
         }
 
-        // -- the main screen and the two submenus drawn over it ---------------
+        // -- the main screen, and the feed submenu drawn over it --------------
         draw::status_bar(gfx, &s);
 
         if s.asleep {
@@ -407,24 +390,23 @@ impl BadgeGame for VirtualPet {
                 draw::list(gfx, &FEED_ITEMS, *cursor);
                 draw::legend(gfx, "< sel   ^ ok   > back");
             }
-            Screen::System(cursor) => {
-                draw::list(gfx, &SYSTEM_ITEMS, *cursor);
-                draw::legend(gfx, "< sel   ^ ok   > back");
-            }
-            Screen::Main(cursor) => {
+            _ => {
                 if s.stage == Stage::Egg {
                     // Nothing can be done for an egg, so it gets no icon bar.
                     draw::legend(gfx, "not long now...");
                 } else {
-                    draw::menu_bar(gfx, &MENU, *cursor);
-                    // The icons are single characters; the selected one gets its
-                    // name spelled out just above the bar.
-                    if let Some(i) = *cursor {
-                        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Small, MENU_NAMES[i]);
-                    }
+                    draw::menu_bar(gfx, &MENU, Some(self.cursor));
+                    // The icons are two letters; the selected one gets its name
+                    // spelled out just above the bar.
+                    draw::line(
+                        gfx,
+                        draw::MENU_TOP - 18,
+                        16,
+                        GlyphStyle::Small,
+                        MENU_NAMES[self.cursor],
+                    );
                 }
             }
-            _ => {}
         }
 
         if let Some((text, _)) = &self.message {
