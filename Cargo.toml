@@ -1,0 +1,18 @@
+[package]
+name = "dc34-virtual-pet"
+version = "0.1.0"
+edition = "2021"
+description = "Creature-raising game for the DC34 badge, plugged into dc34-vault as a BadgeGame"
+
+[dependencies]
+dc34-virtual-pet-core = { path = "./core" }
+
+# Pinned to the same revision as dc34-vault so that its `[patch]` section, which
+# redirects these to the local xous-core checkout, applies to us too.
+ux-api = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
+blitstr2 = { git = "https://github.com/betrusted-io/xous-core", rev = "616bf65f6e379165464f50b1e79ec42aff77a683" }
+
+[features]
+board-baosec = ["ux-api/board-baosec", "blitstr2/board-baosec"]
+hosted-baosec = ["ux-api/hosted-baosec"]
+default = []
