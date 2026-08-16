@@ -46,8 +46,6 @@ const MESSAGE_MS: u64 = 1500;
 /// asks for: the emoji font is 16 px like the Japanese one, so they fit a cell,
 /// and unlike kana they need no fork -- emoji were always in the fallback chain.
 const MENU: [&str; 5] = ["🍚", "🎮", "🧹", "💊", "📖"];
-/// What each icon means, shown while it is selected.
-const MENU_NAMES: [&str; 5] = ["ごはん", "あそぶ", "そうじ", "くすり", "しつけ"];
 
 const MENU_FEED: usize = 0;
 const MENU_PLAY: usize = 1;
@@ -345,7 +343,7 @@ impl BadgeGame for VirtualPet {
                 };
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
                 draw::line(gfx, 90, 16, GlyphStyle::Small, detail);
-                draw::legend(gfx, "🔥 でつづける");
+                draw::legend(gfx, "o でつづける");
                 return;
             }
 
@@ -353,7 +351,7 @@ impl BadgeGame for VirtualPet {
                 draw::creature(gfx, s.stage, Face::Happy);
                 let title = if s.stage == Stage::Baby { "うまれた！" } else { "おおきくなった！" };
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
-                draw::legend(gfx, "🔥 でつづける");
+                draw::legend(gfx, "o でつづける");
                 return;
             }
 
@@ -369,7 +367,7 @@ impl BadgeGame for VirtualPet {
                 for (i, row) in rows.iter().enumerate() {
                     draw::line(gfx, 22 + i as isize * 17, 16, GlyphStyle::Small, row);
                 }
-                draw::legend(gfx, "🔥 / → でもどる");
+                draw::legend(gfx, "> でもどる");
                 return;
             }
 
@@ -393,27 +391,21 @@ impl BadgeGame for VirtualPet {
 
         draw::creature(gfx, s.stage, face);
         draw::mess(gfx, s.poop);
+        draw::trouble(gfx, s.sick, s.alert);
 
         match &self.screen {
             Screen::Feed(cursor) => {
                 draw::list(gfx, &FEED_ITEMS, *cursor);
-                draw::legend(gfx, "← えらぶ  🔥 きめる  → もどる");
+                draw::legend(gfx, "> でもどる");
             }
             _ => {
                 if s.stage == Stage::Egg {
                     // Nothing can be done for an egg, so it gets no icon bar.
                     draw::legend(gfx, "うまれるまで…");
                 } else {
+                    // No spelled-out name under the bar: the icons say what
+                    // they are, and that strip is where droppings go.
                     draw::menu_bar(gfx, &MENU, Some(self.cursor));
-                    // The icons are two letters; the selected one gets its name
-                    // spelled out just above the bar.
-                    draw::line(
-                        gfx,
-                        draw::MENU_TOP - 18,
-                        16,
-                        GlyphStyle::Small,
-                        MENU_NAMES[self.cursor],
-                    );
                 }
             }
         }

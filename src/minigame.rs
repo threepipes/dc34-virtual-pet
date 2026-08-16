@@ -57,21 +57,30 @@ impl MiniGame {
     }
 
     pub fn draw(&self, gfx: &Gfx) {
-        let mut header = String::new();
         use core::fmt::Write;
-        write!(header, "あそぶ  {}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
-        draw::line(gfx, 2, 16, GlyphStyle::Bold, &header);
 
-        // The pet leans the way it turned last round, so the reveal is visible
-        // without a screen of its own.
+        // The title is eight full-width glyphs at 17 px of advance each, which
+        // is wider than the screen. The box is two lines tall so that wordwrap
+        // breaks it rather than dropping the tail off the edge.
+        draw::wrapped(gfx, 2, 36, GlyphStyle::Bold, "あっちむいてホイ");
+        draw::line(gfx, 38, 17, GlyphStyle::Regular, "ひだり？みぎ？");
+
+        // The hands say which button does what, next to the pet that is about
+        // to turn one way or the other. A written-out legend does not fit the
+        // width, and this needs no reading.
+        draw::icon(gfx, 8, PET_Y - 8, "👈");
+        draw::icon(gfx, draw::SCREEN - 26, PET_Y - 8, "👉");
+
+        // The pet leans the way it turned last round, so the reveal needs no
+        // screen of its own.
         let lean = match self.last {
-            Some((0, _)) => -14,
-            Some((_, _)) => 14,
+            Some((0, _)) => -12,
+            Some((_, _)) => 12,
             None => 0,
         };
-        let centre = Point::new(draw::SCREEN / 2 + lean, 56);
+        let centre = Point::new(draw::SCREEN / 2 + lean, PET_Y);
         let style = DrawStyle::new(PixelColor::Light, PixelColor::Dark, 1);
-        gfx.draw_circle(Circle::new_with_style(centre, 18, style)).ok();
+        gfx.draw_circle(Circle::new_with_style(centre, 16, style)).ok();
         for side in [-1, 1] {
             let eye = Point::new(centre.x + side * 6, centre.y - 5);
             gfx.draw_circle(Circle::new_with_style(
@@ -82,11 +91,33 @@ impl MiniGame {
             .ok();
         }
 
-        if let Some((_, right)) = self.last {
-            draw::line(gfx, 80, 16, GlyphStyle::Small, if right { "あたり！" } else { "はずれ" });
-        }
+        let mut count = String::new();
+        write!(count, "{}/{}", (self.round + 1).min(ROUNDS), ROUNDS).ok();
+        draw::text(
+            gfx,
+            Rectangle::new_coords(2, BOTTOM, 40, BOTTOM + 17),
+            GlyphStyle::Small,
+            false,
+            &count,
+        );
 
-        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Regular, "  ひだり      みぎ");
-        draw::legend(gfx, "← ひだり  🔥 やめる  → みぎ");
+        // One line for both, because there is only room for one: the result
+        // once there is a result, and until then the way out.
+        let tail = match self.last {
+            Some((_, true)) => "あたり！",
+            Some((_, false)) => "はずれ",
+            None => "o やめる",
+        };
+        draw::text(
+            gfx,
+            Rectangle::new_coords(44, BOTTOM, draw::SCREEN - 3, BOTTOM + 17),
+            GlyphStyle::Regular,
+            false,
+            tail,
+        );
     }
 }
+
+/// Vertical centre of the pet, and the top of the bottom line.
+const PET_Y: isize = 76;
+const BOTTOM: isize = 105;

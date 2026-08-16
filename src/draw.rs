@@ -67,6 +67,13 @@ pub fn line(gfx: &Gfx, top: isize, height: isize, style: GlyphStyle, s: &str) {
     text(gfx, Rectangle::new_coords(2, top, SCREEN - 3, top + height), style, false, s);
 }
 
+/// Same, but with room to wrap. Full-width glyphs advance 17 px whatever the
+/// style asks for, so seven of them is all a line holds; anything longer needs
+/// this rather than a taller guess at where to break it.
+pub fn wrapped(gfx: &Gfx, top: isize, bottom: isize, style: GlyphStyle, s: &str) {
+    text(gfx, Rectangle::new_coords(2, top, SCREEN - 3, bottom), style, false, s);
+}
+
 // -- Common furniture ---------------------------------------------------------
 
 /// Generation and age on the left, mood and fullness on the right.
@@ -211,16 +218,34 @@ pub fn creature(gfx: &Gfx, stage: Stage, face: Face) {
         }
     }
 
-    match face {
-        // No sound and no LED, so the call has to be visible: two marks over the
-        // creature's head, where nothing else is drawn.
-        Face::Troubled | Face::Sick => {
-            line(gfx, CENTER_Y - r - 18, 16, GlyphStyle::Bold, "  !     !");
-        }
-        Face::Asleep => {
-            line(gfx, CENTER_Y - r - 18, 16, GlyphStyle::Small, "        z z");
-        }
-        _ => {}
+}
+
+/// One 16 px glyph, placed. Text is the only way to get an emoji on screen, and
+/// a `TextView` clears its own box, so these go where nothing else is drawn.
+pub fn icon(gfx: &Gfx, left: isize, top: isize, s: &str) {
+    text(gfx, Rectangle::new_coords(left, top, left + 17, top + 17), GlyphStyle::Regular, false, s);
+}
+
+/// The row along the bottom of the field where problems collect: droppings on
+/// the left, and on the right whatever the pet is calling about.
+///
+/// Illness and a bottomed-out meter used to look identical -- a troubled face
+/// and a couple of exclamation marks -- so they get their own glyphs.
+const TROUBLE_TOP: isize = FIELD_BOTTOM - 18;
+
+pub fn mess(gfx: &Gfx, count: u8) {
+    for i in 0..count.min(POOP_MAX) as isize {
+        icon(gfx, 6 + i * 20, TROUBLE_TOP, "💩");
+    }
+}
+
+/// Illness wins over a plain call: it is the one that needs medicine rather
+/// than food, and showing both would not fit.
+pub fn trouble(gfx: &Gfx, sick: bool, alert: bool) {
+    if sick {
+        icon(gfx, SCREEN - 20, TROUBLE_TOP, "🤒");
+    } else if alert {
+        icon(gfx, SCREEN - 20, TROUBLE_TOP, "❗");
     }
 }
 
@@ -235,13 +260,4 @@ fn egg(gfx: &Gfx) {
         DrawStyle::new(PAPER, PAPER, 3),
     ))
     .ok();
-}
-
-/// Droppings, along the bottom of the field.
-pub fn mess(gfx: &Gfx, count: u8) {
-    for i in 0..count.min(POOP_MAX) as isize {
-        let x = 14 + i * 14;
-        let y = FIELD_BOTTOM - 8;
-        gfx.draw_circle(Circle::new_with_style(Point::new(x, y), 4, filled())).ok();
-    }
 }
