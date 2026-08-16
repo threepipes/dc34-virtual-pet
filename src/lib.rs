@@ -5,15 +5,17 @@
 //! it was built against. Swapping in a different game is a one-line change to
 //! the host's `Cargo.toml`.
 //!
-//! The game itself is still the PoC screen -- a clock and two boxes. The raising
-//! mechanics come later; what is being proven here is the plumbing.
+//! The rules live in `dc34-virtual-pet-core`, which knows nothing about Xous.
+//! What is here is the part that cannot be tested off-device: which screen is
+//! up, which button does what, and how it all looks.
 
-use core::fmt::Write;
+mod draw;
+mod minigame;
 
 use blitstr2::GlyphStyle;
-use dc34_virtual_pet_core::GameState;
-use ux_api::minigfx::*;
-use ux_api::service::api::Gid;
+use dc34_virtual_pet_core::{GameState, Outcome, Refusal, Snapshot, Stage};
+use draw::Face;
+use minigame::MiniGame;
 use ux_api::service::gfx::Gfx;
 
 // -- Buttons ------------------------------------------------------------------
@@ -27,22 +29,23 @@ const KEY_OK: char = '🔥';
 /// Right button: back out.
 const KEY_CANCEL: char = '→';
 
-// -- Layout -------------------------------------------------------------------
+/// How long a reaction stays on screen.
+const MESSAGE_MS: u64 = 1500;
 
-const SCREEN: isize = 128;
-const ITEMS: [&'static str; 2] = ["hello, world!", "end"];
+/// The main screen's icon bar, in cursor order.
+const MENU: [&str; 6] = ["ご", "あ", "そ", "く", "し", "メ"];
+/// What each icon means, shown while it is selected.
+const MENU_NAMES: [&str; 6] = ["ごはん", "あそぶ", "そうじ", "くすり", "しつけ", "メニュー"];
 
-/// Index of the item that leaves the game.
-const ITEM_END: usize = 1;
+const MENU_FEED: usize = 0;
+const MENU_PLAY: usize = 1;
+const MENU_CLEAN: usize = 2;
+const MENU_MEDICINE: usize = 3;
+const MENU_SCOLD: usize = 4;
+const MENU_SYSTEM: usize = 5;
 
-/// Vertical extent of each menu box.
-const BOX_TOP: [isize; 2] = [34, 66];
-const BOX_HEIGHT: isize = 26;
-const BOX_MARGIN_X: isize = 8;
-const BOX_RADIUS: isize = 4;
-
-/// How long the "Hello, world!" acknowledgement stays up.
-const MESSAGE_MS: u64 = 2000;
+const FEED_ITEMS: [&str; 2] = ["ごはん", "おやつ"];
+const SYSTEM_ITEMS: [&str; 3] = ["ステータス", "セーブ", "おわる"];
 
 /// What the host should do after handing a key to the game.
 pub enum GameAction {
@@ -68,11 +71,27 @@ pub trait BadgeGame {
 /// talks to the trait, so it never names a concrete game type.
 pub fn new_game() -> Box<dyn BadgeGame> { Box::new(VirtualPet::new()) }
 
+/// Which screen is up. `docs/UI.md` §4 is the transition diagram this follows.
+enum Screen {
+    /// Main screen. `None` means nothing is selected -- the state Cancel returns
+    /// you to, and the one the pet is left alone in.
+    Main(Option<usize>),
+    Feed(usize),
+    System(usize),
+    Status,
+    Play(MiniGame),
+    /// A stage was reached. Blocks until acknowledged so it cannot be missed.
+    Evolved,
+    /// The pet's life ended, one way or the other.
+    Ended(Outcome),
+}
+
 pub struct VirtualPet {
     state: GameState,
-    /// `None` means nothing is selected -- the state Cancel returns you to.
-    cursor: Option<usize>,
-    /// Text to show at the bottom, and the deadline after which it disappears.
+    screen: Screen,
+    /// Stage as of the last frame, to notice evolution.
+    last_stage: Stage,
+    /// Text to show at the bottom of the field, and when it disappears.
     message: Option<(String, u64)>,
     /// Latest clock reading, so that `key()` can set a deadline without being
     /// handed the time itself. `tick()` runs often enough for this to be exact
@@ -86,126 +105,312 @@ impl Default for VirtualPet {
 
 impl VirtualPet {
     pub fn new() -> Self {
-        Self { state: GameState::new(), cursor: Some(0), message: None, now_ms: 0 }
+        Self {
+            state: GameState::new(),
+            screen: Screen::Main(None),
+            last_stage: Stage::Egg,
+            message: None,
+            now_ms: 0,
+        }
+    }
+
+    fn snapshot(&self) -> Snapshot { self.state.game().snapshot() }
+
+    fn say(&mut self, text: &str) {
+        self.message = Some((text.to_string(), self.now_ms + MESSAGE_MS));
+    }
+
+    /// Report an action the pet either did or declined to do.
+    fn report(&mut self, result: Result<(), Refusal>, done: &str) {
+        self.say(match result {
+            Ok(()) => done,
+            Err(Refusal::Unhatched) => "まだたまごだよ",
+            Err(Refusal::Asleep) => "ねているよ",
+            Err(Refusal::Full) => "おなかいっぱい",
+            Err(Refusal::Healthy) => "げんき！",
+            Err(Refusal::Nothing) => "なにもないよ",
+        });
+    }
+
+    /// Act on the main screen's icon bar.
+    fn run_menu_item(&mut self, item: usize) {
+        match item {
+            MENU_FEED => self.screen = Screen::Feed(0),
+            MENU_PLAY => {
+                if self.snapshot().asleep {
+                    self.say("ねているよ");
+                } else {
+                    self.screen = Screen::Play(MiniGame::new(self.now_ms));
+                }
+            }
+            MENU_CLEAN => {
+                let r = self.state.game_mut().pet_mut().clean();
+                self.report(r, "きれいになった");
+            }
+            MENU_MEDICINE => {
+                let r = self.state.game_mut().pet_mut().medicate();
+                self.report(r, "なおった！");
+            }
+            MENU_SCOLD => {
+                let r = self.state.game_mut().pet_mut().scold();
+                self.report(r, "しかった");
+            }
+            MENU_SYSTEM => self.screen = Screen::System(0),
+            _ => {}
+        }
+    }
+
+    /// A finished round of the guessing game. Winning the series is worth more.
+    fn finish_minigame(&mut self, wins: u32) {
+        let won = wins >= 3;
+        self.state.game_mut().pet_mut().play_result(won).ok();
+        self.say(if won { "たのしかった！" } else { "まあまあかな" });
+        self.screen = Screen::Main(None);
+    }
+
+    /// The face for the pet's current state, most urgent first.
+    fn face(&self, s: &Snapshot) -> Face {
+        if s.outcome.is_some() {
+            Face::Dead
+        } else if s.asleep {
+            Face::Asleep
+        } else if s.sick {
+            Face::Sick
+        } else if s.alert {
+            Face::Troubled
+        } else if s.hunger >= 3 && s.mood >= 3 {
+            Face::Happy
+        } else {
+            Face::Normal
+        }
     }
 }
 
 impl BadgeGame for VirtualPet {
     fn start(&mut self, now_ms: u64) {
+        // The clock is re-anchored but the pet is not: `GameState` banks the
+        // uptime, so leaving the game and coming back costs it nothing.
         self.state.start(now_ms);
-        self.cursor = Some(0);
-        self.message = None;
         self.now_ms = now_ms;
+        self.screen = Screen::Main(None);
+        self.message = None;
+        self.last_stage = self.snapshot().stage;
     }
 
     fn tick(&mut self, now_ms: u64) {
         self.state.tick(now_ms);
         self.now_ms = now_ms;
-        // Expire the acknowledgement message.
+
         if let Some((_, deadline)) = self.message {
             if now_ms >= deadline {
                 self.message = None;
             }
         }
+
+        // Growing up and dying interrupt whatever is on screen: both are one-off
+        // events, and a submenu is not worth missing them for.
+        let s = self.snapshot();
+        if let Some(outcome) = s.outcome {
+            if !matches!(self.screen, Screen::Ended(_)) {
+                self.screen = Screen::Ended(outcome);
+                self.message = None;
+            }
+        } else if s.stage != self.last_stage {
+            self.screen = Screen::Evolved;
+            self.message = None;
+        }
+        self.last_stage = s.stage;
     }
 
     fn key(&mut self, k: char) -> GameAction {
-        match k {
-            KEY_SELECT => {
-                self.cursor = Some(match self.cursor {
-                    Some(i) => (i + 1) % ITEMS.len(),
-                    None => 0,
-                });
-            }
-            // Cancel backs out one step at a time: first it drops the selection,
-            // then -- with nothing left to back out of -- it hands the badge back.
-            // Without that second step "end" would be the only way out, which is a
-            // bad place to be if the menu ever fails to draw.
-            KEY_CANCEL => match self.cursor {
-                Some(_) => self.cursor = None,
-                None => return GameAction::Exit,
-            },
-            KEY_OK => match self.cursor {
-                Some(ITEM_END) => return GameAction::Exit,
-                Some(_) => {
-                    self.message = Some(("Hello, world!".to_string(), self.now_ms + MESSAGE_MS));
+        let s = self.snapshot();
+
+        // A sleeping pet takes no orders (`docs/UI.md` §3.7), but Cancel still
+        // hands the badge back -- being unable to leave the game would be a
+        // worse bug than waking the pet.
+        if s.asleep && s.outcome.is_none() && !matches!(self.screen, Screen::Ended(_)) {
+            return if k == KEY_CANCEL { GameAction::Exit } else { GameAction::Continue };
+        }
+
+        match &mut self.screen {
+            Screen::Main(cursor) => match k {
+                KEY_SELECT => *cursor = Some(cursor.map_or(0, |i| (i + 1) % MENU.len())),
+                KEY_OK => {
+                    if let Some(item) = *cursor {
+                        self.run_menu_item(item);
+                    }
                 }
-                None => {}
+                // Cancel backs out one step at a time: first it drops the
+                // selection, then -- with nothing left to back out of -- it hands
+                // the badge back. Without that second step the game would have no
+                // exit if the menu ever failed to draw.
+                KEY_CANCEL => match cursor {
+                    Some(_) => *cursor = None,
+                    None => return GameAction::Exit,
+                },
+                _ => {}
             },
-            // The jog wheel is deliberately unused in this design.
-            _ => {}
+
+            Screen::Feed(cursor) => match k {
+                KEY_SELECT => *cursor = (*cursor + 1) % FEED_ITEMS.len(),
+                KEY_OK => {
+                    let pick = *cursor;
+                    let pet = self.state.game_mut().pet_mut();
+                    let (r, done) = if pick == 0 {
+                        (pet.feed_meal(), "むしゃむしゃ")
+                    } else {
+                        (pet.feed_snack(), "もぐもぐ")
+                    };
+                    self.report(r, done);
+                    self.screen = Screen::Main(None);
+                }
+                KEY_CANCEL => self.screen = Screen::Main(Some(MENU_FEED)),
+                _ => {}
+            },
+
+            Screen::System(cursor) => match k {
+                KEY_SELECT => *cursor = (*cursor + 1) % SYSTEM_ITEMS.len(),
+                KEY_OK => match *cursor {
+                    0 => self.screen = Screen::Status,
+                    // Persistence is not built yet. Saying so is better than a
+                    // reassuring message over a save that did not happen.
+                    1 => self.say("セーブはまだできない"),
+                    _ => return GameAction::Exit,
+                },
+                KEY_CANCEL => self.screen = Screen::Main(Some(MENU_SYSTEM)),
+                _ => {}
+            },
+
+            Screen::Status => {
+                if k == KEY_OK || k == KEY_CANCEL {
+                    self.screen = Screen::Main(Some(MENU_SYSTEM));
+                }
+            }
+
+            Screen::Play(game) => match k {
+                KEY_SELECT => game.toggle(),
+                KEY_OK => {
+                    if let Some(wins) = game.confirm() {
+                        self.finish_minigame(wins);
+                    }
+                }
+                KEY_CANCEL => self.screen = Screen::Main(Some(MENU_PLAY)),
+                _ => {}
+            },
+
+            Screen::Evolved => {
+                if k == KEY_OK {
+                    self.screen = Screen::Main(None);
+                }
+            }
+
+            Screen::Ended(_) => {
+                if k == KEY_OK {
+                    self.state.game_mut().next_generation();
+                    self.last_stage = self.snapshot().stage;
+                    self.screen = Screen::Main(None);
+                }
+            }
         }
         GameAction::Continue
     }
 
-    /// Paint the whole screen. Cheap enough at 128x128 that partial redraws would
-    /// be premature; if flicker shows up, switch to repainting only on changes.
+    /// Paint the whole screen. Cheap enough at 128x128 that partial redraws
+    /// would be premature; if flicker shows up, switch to repainting only on
+    /// changes.
     ///
-    /// No flush here: the host flushes once per frame for every mode, and doing it
-    /// twice would push the whole framebuffer over IPC for nothing.
+    /// No flush here: the host flushes once per frame for every mode, and doing
+    /// it twice would push the whole framebuffer over IPC for nothing.
     fn draw(&self, gfx: &Gfx) {
         gfx.clear().ok();
+        let s = self.snapshot();
+        let face = self.face(&s);
 
-        // -- clock ------------------------------------------------------------
-        let t = self.state.game_time();
-        let mut clock = TextView::new(
-            Gid::dummy(),
-            TextBounds::BoundingBox(Rectangle::new_coords(0, 2, SCREEN - 1, 20)),
-        );
-        clock.draw_border = false;
-        clock.style = GlyphStyle::Bold;
-        write!(clock, "Day {}  {:02}:{:02}", t.day, t.hour, t.minute).ok();
-        gfx.draw_textview(&mut clock).ok();
+        match &self.screen {
+            Screen::Ended(outcome) => {
+                draw::creature(gfx, s.stage, Face::Dead);
+                let (title, detail) = match outcome {
+                    Outcome::Lifespan => ("じゅみょうをまっとうした", "とくせいをひきついだ"),
+                    Outcome::CareFailure => ("おわってしまった…", "せだいは 1 にもどる"),
+                };
+                draw::line(gfx, 2, 16, GlyphStyle::Regular, title);
+                draw::line(gfx, 90, 16, GlyphStyle::Small, detail);
+                draw::legend(gfx, "🔥 でつづける");
+                return;
+            }
 
-        // -- menu boxes -------------------------------------------------------
-        for (i, label) in ITEMS.iter().enumerate() {
-            let selected = self.cursor == Some(i);
-            let top = BOX_TOP[i];
+            Screen::Evolved => {
+                draw::creature(gfx, s.stage, Face::Happy);
+                let title = if s.stage == Stage::Baby { "うまれた！" } else { "おおきくなった！" };
+                draw::line(gfx, 2, 16, GlyphStyle::Bold, title);
+                draw::legend(gfx, "🔥 でつづける");
+                return;
+            }
 
-            // A thicker stroke marks the selection. Inverting the fill would be the
-            // other option, but that also inverts the text and reads as "pressed".
-            let style =
-                DrawStyle::new(PixelColor::Light, PixelColor::Dark, if selected { 2 } else { 1 });
-            let border = Rectangle::new_coords_with_style(
-                BOX_MARGIN_X,
-                top,
-                SCREEN - 1 - BOX_MARGIN_X,
-                top + BOX_HEIGHT,
-                style,
-            );
-            gfx.draw_rounded_rectangle(RoundedRectangle::new(border, BOX_RADIUS)).ok();
+            Screen::Status => {
+                draw::line(gfx, 2, 16, GlyphStyle::Bold, "ステータス");
+                let rows = [
+                    format!("せだい    {}", s.generation),
+                    format!("ねんれい  {} にち", s.time.day),
+                    format!("たいじゅう {} g", s.weight),
+                    format!("しつけ    {} / 4", s.discipline),
+                    format!("ケアミス  {} かい", s.care_miss),
+                ];
+                for (i, row) in rows.iter().enumerate() {
+                    draw::line(gfx, 22 + i as isize * 17, 16, GlyphStyle::Small, row);
+                }
+                draw::legend(gfx, "→ でもどる");
+                return;
+            }
 
-            let mut tv = TextView::new(
-                Gid::dummy(),
-                TextBounds::BoundingBox(Rectangle::new_coords(
-                    BOX_MARGIN_X + 5,
-                    top + 4,
-                    SCREEN - 1 - BOX_MARGIN_X - 5,
-                    top + BOX_HEIGHT - 3,
-                )),
-            );
-            tv.draw_border = false;
-            tv.style = GlyphStyle::Regular;
-            write!(tv, "{}{}", if selected { "> " } else { "  " }, label).ok();
-            gfx.draw_textview(&mut tv).ok();
+            Screen::Play(game) => {
+                game.draw(gfx);
+                return;
+            }
+
+            Screen::Main(_) | Screen::Feed(_) | Screen::System(_) => {}
         }
 
-        // -- bottom line: message, or the button legend -----------------------
-        let mut footer = TextView::new(
-            Gid::dummy(),
-            TextBounds::BoundingBox(Rectangle::new_coords(0, SCREEN - 18, SCREEN - 1, SCREEN - 1)),
-        );
-        footer.draw_border = false;
-        match &self.message {
-            Some((text, _)) => {
-                footer.style = GlyphStyle::Bold;
-                write!(footer, "{}", text).ok();
-            }
-            None => {
-                footer.style = GlyphStyle::Small;
-                write!(footer, "< sel   ^ ok   > cancel").ok();
-            }
+        // -- the main screen and the two submenus drawn over it ---------------
+        draw::status_bar(gfx, &s);
+
+        if s.asleep {
+            // No menu bar while it sleeps: there is nothing to press.
+            draw::creature(gfx, s.stage, Face::Asleep);
+            draw::legend(gfx, "おやすみ…");
+            return;
         }
-        gfx.draw_textview(&mut footer).ok();
+
+        draw::creature(gfx, s.stage, face);
+        draw::mess(gfx, s.poop);
+
+        match &self.screen {
+            Screen::Feed(cursor) => {
+                draw::list(gfx, &FEED_ITEMS, *cursor);
+                draw::legend(gfx, "← えらぶ  🔥 きめる  → もどる");
+            }
+            Screen::System(cursor) => {
+                draw::list(gfx, &SYSTEM_ITEMS, *cursor);
+                draw::legend(gfx, "← えらぶ  🔥 きめる  → もどる");
+            }
+            Screen::Main(cursor) => {
+                if s.stage == Stage::Egg {
+                    // Nothing can be done for an egg, so it gets no icon bar.
+                    draw::legend(gfx, "うまれるまで…");
+                } else {
+                    draw::menu_bar(gfx, &MENU, *cursor);
+                    // The icons are single characters; the selected one gets its
+                    // name spelled out just above the bar.
+                    if let Some(i) = *cursor {
+                        draw::line(gfx, draw::MENU_TOP - 18, 16, GlyphStyle::Small, MENU_NAMES[i]);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if let Some((text, _)) = &self.message {
+            draw::line(gfx, draw::FIELD_TOP + 2, 16, GlyphStyle::Bold, text);
+        }
     }
 }
