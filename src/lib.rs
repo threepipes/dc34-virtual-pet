@@ -331,7 +331,7 @@ impl BadgeGame for VirtualPet {
     /// No flush here: the host flushes once per frame for every mode, and doing
     /// it twice would push the whole framebuffer over IPC for nothing.
     fn draw(&self, gfx: &Gfx) {
-        gfx.clear().ok();
+        draw::page(gfx);
         let s = self.snapshot();
         let face = self.face(&s);
 

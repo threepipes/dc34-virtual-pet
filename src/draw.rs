@@ -50,6 +50,23 @@ pub enum Face {
     Dead,
 }
 
+/// Start a frame with a white page.
+///
+/// `Gfx::clear` fills the framebuffer with ones, and a set bit is dark on this
+/// panel -- so clearing gives a black screen, not a blank one. Everything that
+/// draws text was papering over that with its own `clear_area` box, which is why
+/// the screen read as white slabs on black. Painting Light over the whole thing
+/// first is what makes the background actually white.
+///
+/// The emulator and the SH1107 driver are bit-identical here, so this looks the
+/// same on hardware.
+pub fn page(gfx: &Gfx) {
+    let all = Rectangle::new_coords_with_style(0, 0, SCREEN - 1, SCREEN - 1, blank());
+    gfx.draw_rectangle(all).ok();
+}
+
+fn blank() -> DrawStyle { DrawStyle::new(PAPER, PAPER, 1) }
+
 // -- Text ---------------------------------------------------------------------
 
 /// Draw one line of text in `bounds`. Everything on screen goes through here, so
