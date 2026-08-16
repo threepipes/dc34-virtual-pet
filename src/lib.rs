@@ -16,6 +16,7 @@ use blitstr2::GlyphStyle;
 use dc34_virtual_pet_core::{GameState, Outcome, Refusal, Snapshot, Stage};
 use draw::Face;
 use minigame::MiniGame;
+use ux_api::minigfx::Rectangle;
 use ux_api::service::gfx::Gfx;
 
 // -- Buttons ------------------------------------------------------------------
@@ -45,7 +46,7 @@ const MESSAGE_MS: u64 = 1500;
 /// The main screen's icon bar, in cursor order. These are the icons `docs/UI.md`
 /// asks for: the emoji font is 16 px like the Japanese one, so they fit a cell,
 /// and unlike kana they need no fork -- emoji were always in the fallback chain.
-const MENU: [&str; 5] = ["🍚", "🎮", "🧹", "💊", "📖"];
+const MENU: [&str; 5] = ["🍚", "🎮", "🚽", "💉", "📖"];
 
 const MENU_FEED: usize = 0;
 const MENU_PLAY: usize = 1;
@@ -357,15 +358,29 @@ impl BadgeGame for VirtualPet {
 
             Screen::Status => {
                 draw::line(gfx, 2, 16, GlyphStyle::Bold, "ステータス");
+                // Two columns rather than padded strings: a full-width glyph
+                // is 16 px plus a pixel of kern, so "たいじゅう 25 g" on one
+                // line is wider than the screen and wordwrap drops the tail.
                 let rows = [
-                    format!("せだい     {}", s.generation),
-                    format!("ねんれい   {} にちめ", s.time.day),
-                    format!("たいじゅう {} g", s.weight),
-                    format!("しつけ     {} / 4", s.discipline),
-                    format!("ケアミス   {} かい", s.care_miss),
+                    ("せだい", format!("{}", s.generation)),
+                    ("ねんれい", format!("{}", s.time.day)),
+                    ("たいじゅう", format!("{}g", s.weight)),
+                    ("しつけ", format!("{}/4", s.discipline)),
+                    ("ケアミス", format!("{}", s.care_miss)),
                 ];
-                for (i, row) in rows.iter().enumerate() {
-                    draw::line(gfx, 22 + i as isize * 17, 16, GlyphStyle::Small, row);
+                for (i, (label, value)) in rows.iter().enumerate() {
+                    let y = 24 + i as isize * 17;
+                    let row = |left, right, text: &str| {
+                        draw::text(
+                            gfx,
+                            Rectangle::new_coords(left, y, right, y + 18),
+                            GlyphStyle::Regular,
+                            false,
+                            text,
+                        )
+                    };
+                    row(2, 92, label);
+                    row(94, draw::SCREEN - 3, value);
                 }
                 draw::legend(gfx, "> でもどる");
                 return;

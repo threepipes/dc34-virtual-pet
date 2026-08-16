@@ -220,10 +220,17 @@ pub fn creature(gfx: &Gfx, stage: Stage, face: Face) {
 
 }
 
+/// Width and height of an icon's box. A glyph is 16 px and the box loses 2 px to
+/// margins, but a box of exactly 18 draws nothing: wordwrap drops a word when
+/// its width is `>=` the line, not `>`, so 16 in 16 counts as an overflow. The
+/// slack is what makes the icon appear at all.
+const ICON_BOX: isize = 22;
+
 /// One 16 px glyph, placed. Text is the only way to get an emoji on screen, and
 /// a `TextView` clears its own box, so these go where nothing else is drawn.
 pub fn icon(gfx: &Gfx, left: isize, top: isize, s: &str) {
-    text(gfx, Rectangle::new_coords(left, top, left + 17, top + 17), GlyphStyle::Regular, false, s);
+    let bounds = Rectangle::new_coords(left, top, left + ICON_BOX - 1, top + ICON_BOX - 3);
+    text(gfx, bounds, GlyphStyle::Regular, false, s);
 }
 
 /// The row along the bottom of the field where problems collect: droppings on
@@ -231,21 +238,22 @@ pub fn icon(gfx: &Gfx, left: isize, top: isize, s: &str) {
 ///
 /// Illness and a bottomed-out meter used to look identical -- a troubled face
 /// and a couple of exclamation marks -- so they get their own glyphs.
-const TROUBLE_TOP: isize = FIELD_BOTTOM - 18;
+const TROUBLE_TOP: isize = FIELD_BOTTOM - (ICON_BOX - 2);
 
 pub fn mess(gfx: &Gfx, count: u8) {
     for i in 0..count.min(POOP_MAX) as isize {
-        icon(gfx, 6 + i * 20, TROUBLE_TOP, "💩");
+        icon(gfx, 4 + i * (ICON_BOX + 2), TROUBLE_TOP, "💩");
     }
 }
 
 /// Illness wins over a plain call: it is the one that needs medicine rather
 /// than food, and showing both would not fit.
 pub fn trouble(gfx: &Gfx, sick: bool, alert: bool) {
+    let left = SCREEN - ICON_BOX - 2;
     if sick {
-        icon(gfx, SCREEN - 20, TROUBLE_TOP, "🤒");
+        icon(gfx, left, TROUBLE_TOP, "🤒");
     } else if alert {
-        icon(gfx, SCREEN - 20, TROUBLE_TOP, "❗");
+        icon(gfx, left, TROUBLE_TOP, "❗");
     }
 }
 

@@ -68,8 +68,8 @@ impl MiniGame {
         // The hands say which button does what, next to the pet that is about
         // to turn one way or the other. A written-out legend does not fit the
         // width, and this needs no reading.
-        draw::icon(gfx, 8, PET_Y - 8, "👈");
-        draw::icon(gfx, draw::SCREEN - 26, PET_Y - 8, "👉");
+        draw::icon(gfx, 4, PET_Y - 10, "👈");
+        draw::icon(gfx, draw::SCREEN - 26, PET_Y - 10, "👉");
 
         // The pet leans the way it turned last round, so the reveal needs no
         // screen of its own.
